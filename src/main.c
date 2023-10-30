@@ -1,5 +1,9 @@
 #include <stdio.h>
+#ifdef _WIN32
+#include "../WinDependencies/include/raylib.h"
+#else
 #include <raylib.h>
+#endif
 #include "hotreload.h"
 
 

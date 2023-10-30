@@ -1,7 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#ifdef _WIN32
+#include "../WinDependencies/include/raylib.h"
+#else
 #include <raylib.h>
+#endif
 #include "plug.h"
 
 #define N_KEYS 88
