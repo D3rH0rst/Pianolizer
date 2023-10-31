@@ -29,7 +29,7 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-const char* midi_file_path = "/home/max/Downloads/Op16_No4_E_Minor.mid";
+const char* midi_file_path = "C:\\Users\\Max\\Downloads\\Op16_No4_E_Minor.mid";//"/home/max/Downloads/Op16_No4_E_Minor.mid";
 
 
 typedef struct {
