@@ -29,7 +29,7 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-const char* midi_file_path = "C:\\Users\\Max\\Downloads\\Op16_No4_E_Minor.mid";//"/home/max/Downloads/Op16_No4_E_Minor.mid";
+// const char* midi_file_path = "C:\\Users\\Max\\Downloads\\op42no5.mid";//"D:\\ProgrammingStuff\\pianolizer\\Midis\\Op16_No4_E_Minor.mid";
 
 
 typedef struct {
@@ -62,7 +62,7 @@ typedef struct {
 
     NoteEvents note_events;
     int n_channel_arrays;
-    ChannelEventArray channel_array[16];
+    ChannelEventArray channel_arrays[16];
     int64_t channel_midi_dt[16];
     size_t channel_event_idx[16];
 
@@ -125,6 +125,18 @@ void insert_scroll_rect(ScrollRects* arr, size_t index, ScrollRect sr) {
 
     // Increase the size of the array
     arr->size++;
+}
+
+void load_midi_file(const char* file_path) {
+    if (p->note_events.elements != NULL) {
+        destroy_note_event_array(&p->note_events);
+        for (int i = 0; i < p->n_channel_arrays; i++) {
+            destroy_channel_arrays(p->channel_arrays);
+        }
+        p->n_channel_arrays = 0;
+    }
+    create_event_arr(file_path, &p->note_events);
+    create_channel_arrays(&p->note_events, p->channel_arrays, &p->n_channel_arrays);
 }
 
 bool is_white(size_t key_octave) {
@@ -226,16 +238,15 @@ void plug_init(void) {
         init_sr_array(&p->keys[i].scroll_rects, SCROLL_RECT_CAP);
     }
     // Create the note events from the supplied midi file
-    create_event_arr(midi_file_path, &p->note_events);
-    create_channel_arrays(&p->note_events, p->channel_array, &p->n_channel_arrays);
+    
+    // load_midi_file(midi_file_path);
 
 
-    TraceLog(LOG_INFO, "MIDI: Amount of note events: %zu", p->note_events.size);
-    TraceLog(LOG_INFO, "MIDI: Amount of unique channels: %d", p->n_channel_arrays);
-    for (int i = 0; i < p->n_channel_arrays; i++) {
-        TraceLog(LOG_INFO, "MIDI: Amount of events in channel %d: %zu", p->channel_array[i].channel, p->channel_array[i].events.size);
-    }
-
+    // TraceLog(LOG_INFO, "MIDI: Amount of note events: %zu", p->note_events.size);
+    // TraceLog(LOG_INFO, "MIDI: Amount of unique channels: %d", p->n_channel_arrays);
+    // for (int i = 0; i < p->n_channel_arrays; i++) {
+    //     TraceLog(LOG_INFO, "MIDI: Amount of events in channel %d: %zu", p->channel_arrays[i].channel, p->channel_arrays[i].events.size);
+    // }
 }
 
 void render_key(Key* key) {
@@ -390,8 +401,8 @@ void update_keys_midi() {
 
     if (p->note_events.size > 0 && p->event_idx < p->note_events.size) {
         for (int i = 0; i < p->n_channel_arrays; i++) {
-            if (p->channel_midi_dt[i] >= p->channel_array[i].events.elements[p->channel_event_idx[i]].delta_time) {
-                handle_midi_event(p->channel_array[i].events.elements[p->channel_event_idx[i]]);
+            if (p->channel_midi_dt[i] >= p->channel_arrays[i].events.elements[p->channel_event_idx[i]].delta_time) {
+                handle_midi_event(p->channel_arrays[i].events.elements[p->channel_event_idx[i]]);
                 p->channel_event_idx[i]++;
                 p->channel_midi_dt[i] = 0;
 
@@ -402,18 +413,47 @@ void update_keys_midi() {
             }
         }
     }
+}
 
-    /*
-    if (p->note_events.size > 0 && p->event_idx < p->note_events.size - 1) {
-        if (p->midi_dt >= p->note_events.elements[p->event_idx].delta_time) {
-            handle_midi_event(p->note_events.elements[p->event_idx]);
-            p->event_idx++;
-            p->midi_dt = 0;
-        } else {
-            p->midi_dt += (int64_t)(tps * GetFrameTime());
-        }
+void reset_current_midi() {
+    for (int i = 0; i < p->n_channel_arrays; i++) {
+        p->channel_event_idx[i] = 0;
+        p->channel_midi_dt[i] = 0;
     }
-    */
+    p->event_idx = 0;
+    reset_keys();
+}
+
+
+void handle_dropped_file() {
+    FilePathList dropped_files = LoadDroppedFiles();
+    const char* new_midi = dropped_files.paths[0];
+    if (strcmp(GetFileExtension(new_midi), ".mid") == 0) {
+        load_midi_file(new_midi);
+        reset_current_midi();
+    }
+    else {
+        TraceLog(LOG_INFO, "MIDI: New non Midi file dropped: %s", new_midi);
+    }
+    UnloadDroppedFiles(dropped_files);
+}
+
+void handle_user_input() {
+    if (IsKeyPressed(KEY_M)) {
+        p->play_midi = !p->play_midi;
+        reset_keys();
+    }
+    if (IsKeyPressed(KEY_Q)) {
+        reset_current_midi();
+    }
+
+    if (IsFileDropped()) {
+        handle_dropped_file();
+    }
+
+    if (IsWindowResized()) {
+        calculate_key_rects();
+    }
 }
 
 void plug_update(void) {
@@ -421,26 +461,14 @@ void plug_update(void) {
         ClearBackground(DARKGRAY);
         render_keys();
         update_keys();
+
         if (p->play_midi) {
             update_keys_midi();
         }
+
         render_scroll_rects();
         update_scroll_rects();
     EndDrawing();
 
-    if (IsKeyPressed(KEY_M)) {
-        p->play_midi = !p->play_midi;
-    }
-    if (IsKeyPressed(KEY_Q)) {
-        for (int i = 0; i < p->n_channel_arrays; i++) {
-            p->channel_event_idx[i] = 0;
-            p->channel_midi_dt[i] = 0;
-        }
-        p->event_idx = 0;
-        reset_keys();
-    }
-
-    if (IsWindowResized()) {
-        calculate_key_rects();
-    }
+    handle_user_input();
 }

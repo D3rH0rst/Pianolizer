@@ -49,6 +49,18 @@ void append_note_event(NoteEvents* arr, NoteEvent event) {
     arr->elements[arr->size++] = event;
 }
 
+void destroy_note_event_array(NoteEvents* arr) {
+    free(arr->elements);
+    arr->elements = NULL;
+    arr->capacity = 0;
+    arr->size = 0;
+}
+
+void destroy_channel_arrays(ChannelEventArray* arr) {
+    destroy_note_event_array(&arr->events);
+    arr->channel = -2;
+}
+
 static void parse_and_dump(struct midi_parser *parser, NoteEvents* events)
 {
     enum midi_parser_status status;
@@ -70,28 +82,12 @@ static void parse_and_dump(struct midi_parser *parser, NoteEvents* events)
                 break;
 
             case MIDI_PARSER_HEADER:
-                /*
-                printf("header\n");
-                printf("  size: %d\n", parser->header.size);
-                printf("  format: %d [%s]\n", parser->header.format, midi_file_format_name(parser->header.format));
-                printf("  tracks count: %d\n", parser->header.tracks_count);
-                printf("  time division: %d\n", parser->header.time_division);
-                */
                 break;
 
             case MIDI_PARSER_TRACK:
-                // puts("track");
-                // printf("  length: %d\n", parser->track.size);
                 break;
 
             case MIDI_PARSER_TRACK_MIDI:
-                /*puts("track-midi");
-                printf("  time: %ld\n", parser->vtime);
-                printf("  status: %d [%s]\n", parser->midi.status, midi_status_name(parser->midi.status));
-                printf("  channel: %d\n", parser->midi.channel);
-                printf("  param1: %d\n", parser->midi.param1);
-                printf("  param2: %d\n", parser->midi.param2);
-                */
                 if (parser->midi.status == 9 || parser->midi.status == 8) {
                     event.status = parser->midi.status;
                     event.channel = parser->midi.channel;
@@ -104,17 +100,9 @@ static void parse_and_dump(struct midi_parser *parser, NoteEvents* events)
                 break;
 
             case MIDI_PARSER_TRACK_META:
-                /*
-                printf("track-meta\n");
-                printf("  time: %ld\n", parser->vtime);
-                printf("  type: %d [%s]\n", parser->meta.type, midi_meta_name(parser->meta.type));
-                printf("  length: %d\n", parser->meta.length);
-                */
                 break;
 
             case MIDI_PARSER_TRACK_SYSEX:
-                // puts("track-sysex");
-                // printf("  time: %ld\n", parser->vtime);
                 break;
 
             default:
@@ -204,6 +192,10 @@ int create_event_arr(const char* filename, NoteEvents* events) {
 }
 
 void create_channel_arrays(NoteEvents* events, ChannelEventArray* channelArrays, int* numChannelArrays) {
+    for (size_t i = 0; i < 16; i++) {
+        channelArrays[i].channel = -2;
+    }
+
     for (size_t i = 0; i < events->size; i++) {
         int channel = events->elements[i].channel;
 

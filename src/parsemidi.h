@@ -21,5 +21,7 @@ typedef struct {
 
 void init_note_event_array(NoteEvents* arr, size_t initialCapacity);
 void append_note_event(NoteEvents* arr, NoteEvent event);
+void destroy_note_event_array(NoteEvents* arr);
 int create_event_arr(const char* filename, NoteEvents* events);
 void create_channel_arrays(NoteEvents* events, ChannelEventArray* channelArrays, int* numChannelArrays);
+void destroy_channel_arrays(ChannelEventArray* arr);
