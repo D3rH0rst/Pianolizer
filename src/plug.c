@@ -13,12 +13,12 @@
 #define N_WHITE_KEYS 52
 #define N_BLACK_KEYS 36
 #define KEYS_IN_OCTAVE 12
-#define BLACK_GROUPS 15
-#define FIRST_KEY 9
+
 #define SCROLL_RECT_CAP 10
-#define NOTE_EVENT_CAP 100
+
 #define SCROLL_SPEED 200
 #define KEY_SCROLL_RECT_OFFSET 5
+
 float padding = 1.0f;
 
 float small_offset;
@@ -29,7 +29,7 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-
+const char* midi_file_path = "/home/max/Downloads/op42no5.mid";//"/home/max/Downloads/twinkle-twinkle-little-star.mid";
 
 
 typedef struct {
@@ -58,9 +58,18 @@ typedef struct {
     Key keys[N_KEYS];
     Key* white_keys[N_WHITE_KEYS];
     Key* black_keys[N_BLACK_KEYS];
-    NoteEvents note_events;
     Key* last_pressed_key;
 
+    NoteEvents note_events;
+    int n_channel_arrays;
+    ChannelEventArray channel_array[16];
+    int64_t channel_midi_dt[16];
+    size_t channel_event_idx[16];
+
+    bool midi_mode;
+    bool midi_event_handled;
+    size_t event_idx;
+    int64_t midi_dt;
 } Plug;
 
 static Plug* p = NULL;
@@ -217,9 +226,16 @@ void plug_init(void) {
         init_sr_array(&p->keys[i].scroll_rects, SCROLL_RECT_CAP);
     }
     // Create the note events from the supplied midi file
-    init_note_event_array(&p->note_events, NOTE_EVENT_CAP);
-    create_event_arr("/home/max/Downloads/op42no5.mid", &p->note_events);
-    TraceLog(LOG_INFO, "Amount of note events: %zu\n", p->note_events.size);
+    create_event_arr(midi_file_path, &p->note_events);
+    create_channel_arrays(&p->note_events, p->channel_array, &p->n_channel_arrays);
+
+
+    TraceLog(LOG_INFO, "MIDI: Amount of note events: %zu", p->note_events.size);
+    TraceLog(LOG_INFO, "MIDI: Amount of unique channels: %d", p->n_channel_arrays);
+    for (int i = 0; i < p->n_channel_arrays; i++) {
+        TraceLog(LOG_INFO, "MIDI: Amount of events in channel %d: %zu", p->channel_array[i].channel, p->channel_array[i].events.size);
+    }
+
 }
 
 void render_key(Key* key) {
@@ -247,7 +263,7 @@ void render_keys() {
     }
 }
 
-void update_keys() {
+void update_keys() {    // handles mouse input and creating scroll rects if a key was newly pressed
     bool black_pressed = false;
     ScrollRect sr = {0};
 
@@ -341,14 +357,74 @@ void update_scroll_rects() {
     }
 }
 
+void handle_midi_event(NoteEvent event) {
+    // TraceLog(LOG_INFO, "MIDIHANDLER: Event status: %u Event idx: %zu", event.status, p->event_idx);
+    uint8_t key_index;
+    if (event.status == 0x8 || (event.status == 0x9 && event.param2 == 0)) {
+        // Note off
+        key_index = event.param1 - 21;
+        p->keys[key_index].pressed = false;
+    }
+    if (event.status == 0x9 && event.param2 > 0) {
+        // Note on
+        ScrollRect sr = {0};
+        key_index = event.param1 - 21;
+        p->keys[key_index].pressed = true;
+        sr.finished = false;
+        sr.rect.width = p->keys[key_index].white ? whiteKey_width : blackKey_width;
+        sr.rect.height = 1;
+        sr.rect.x = p->keys[key_index].key_rect.x;
+        sr.rect.y = p->keys[key_index].key_rect.y - sr.rect.height - KEY_SCROLL_RECT_OFFSET;
+        append_scroll_rect(&p->keys[key_index].scroll_rects, sr);
+    }
+}
+
+void update_keys_midi() {
+    float tps = 1000.f;
+
+    if (p->note_events.size > 0 && p->event_idx < p->note_events.size) {
+        for (int i = 0; i < p->n_channel_arrays; i++) {
+            if (p->channel_midi_dt[i] >= p->channel_array[i].events.elements[p->channel_event_idx[i]].delta_time) {
+                handle_midi_event(p->channel_array[i].events.elements[p->channel_event_idx[i]]);
+                p->channel_event_idx[i]++;
+                p->channel_midi_dt[i] = 0;
+
+                // increment global event index to check if end reached
+                p->event_idx++;
+            } else {
+                p->channel_midi_dt[i] += (int64_t)(tps * GetFrameTime());
+            }
+        }
+    }
+
+    /*
+    if (p->note_events.size > 0 && p->event_idx < p->note_events.size - 1) {
+        if (p->midi_dt >= p->note_events.elements[p->event_idx].delta_time) {
+            handle_midi_event(p->note_events.elements[p->event_idx]);
+            p->event_idx++;
+            p->midi_dt = 0;
+        } else {
+            p->midi_dt += (int64_t)(tps * GetFrameTime());
+        }
+    }
+    */
+}
+
 void plug_update(void) {
     BeginDrawing();
         ClearBackground(DARKGRAY);
         render_keys();
         update_keys();
+        if (p->midi_mode) {
+            update_keys_midi();
+        }
         render_scroll_rects();
         update_scroll_rects();
     EndDrawing();
+
+    //if (IsKeyPressed(KEY_M)) {
+        p->midi_mode = true;//!p->midi_mode;
+    //}
 
     if (IsWindowResized()) {
         calculate_key_rects();

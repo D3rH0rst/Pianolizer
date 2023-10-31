@@ -10,6 +10,8 @@
 #include "midi-parser.h"
 #include "parsemidi.h"
 
+#define NOTE_EVENT_CAP 100
+
 void init_note_event_array(NoteEvents* arr, size_t initialCapacity) {
     arr->elements = malloc(initialCapacity * sizeof(NoteEvent));
     arr->size = 0;
@@ -67,12 +69,15 @@ static void parse_and_dump(struct midi_parser *parser, NoteEvents* events)
                 printf("  param1: %d\n", parser->midi.param1);
                 printf("  param2: %d\n", parser->midi.param2);
                 */
-                event.status = parser->midi.status;
-                event.channel = parser->midi.channel;
-                event.delta_time = parser->vtime;
-                event.param1 = parser->midi.param1;
-                event.param2 = parser->midi.param2;
-                append_note_event(events, event);
+                if (parser->midi.status == 9 || parser->midi.status == 8) {
+                    event.status = parser->midi.status;
+                    event.channel = parser->midi.channel;
+                    event.delta_time = parser->vtime;
+                    event.param1 = parser->midi.param1;
+                    event.param2 = parser->midi.param2;
+                    append_note_event(events, event);
+                }
+
                 break;
 
             case MIDI_PARSER_TRACK_META:
@@ -128,9 +133,35 @@ static int parse_file(const char *path, NoteEvents* events)
 }
 
 int create_event_arr(const char* filename, NoteEvents* events) {
+    init_note_event_array(events, NOTE_EVENT_CAP);
     if (parse_file(filename, events) != 0) {
         fprintf(stderr, "Error while parsing file\n");
         return 1;
     }
     return 0;
+}
+
+void create_channel_arrays(NoteEvents* events, ChannelEventArray* channelArrays, int* numChannelArrays) {
+    for (size_t i = 0; i < events->size; i++) {
+        int channel = events->elements[i].channel;
+
+        // Check if a subarray for this channel already exists
+        int subArrayIndex = -1;
+        for (int j = 0; j < *numChannelArrays; j++) {
+            if (channelArrays[j].channel == channel) {
+                subArrayIndex = j;
+                break;
+            }
+        }
+
+        if (subArrayIndex == -1) {
+            // Create a new subarray for this channel
+            channelArrays[*numChannelArrays].channel = channel;
+            init_note_event_array(&channelArrays[*numChannelArrays].events, 100);
+            subArrayIndex = (*numChannelArrays)++;
+        }
+
+        // Add the event to the subarray
+        append_note_event(&channelArrays[subArrayIndex].events, events->elements[i]);
+    }
 }

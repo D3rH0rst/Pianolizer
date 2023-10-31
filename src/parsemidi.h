@@ -14,6 +14,12 @@ typedef struct {
     size_t capacity;
 } NoteEvents;
 
+typedef struct {
+    NoteEvents events;
+    int channel;
+} ChannelEventArray;
+
 void init_note_event_array(NoteEvents* arr, size_t initialCapacity);
 void append_note_event(NoteEvents* arr, NoteEvent event);
 int create_event_arr(const char* filename, NoteEvents* events);
+void create_channel_arrays(NoteEvents* events, ChannelEventArray* channelArrays, int* numChannelArrays);
