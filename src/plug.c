@@ -29,7 +29,7 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-const char* midi_file_path = "/home/max/Downloads/op42no5.mid";//"/home/max/Downloads/twinkle-twinkle-little-star.mid";
+const char* midi_file_path = "/home/max/Downloads/Op16_No4_E_Minor.mid";
 
 
 typedef struct {
@@ -66,7 +66,7 @@ typedef struct {
     int64_t channel_midi_dt[16];
     size_t channel_event_idx[16];
 
-    bool midi_mode;
+    bool play_midi;
     bool midi_event_handled;
     size_t event_idx;
     int64_t midi_dt;
@@ -253,6 +253,12 @@ void render_key(Key* key) {
     }
 }
 
+void reset_keys() {
+    for (size_t i = 0; i < N_KEYS; i++) {
+        p->keys[i].pressed = false;
+    }
+}
+
 void render_keys() {
     for (size_t i = 0; i < N_WHITE_KEYS; i++) {
         render_key(p->white_keys[i]);          // Render all white keys before all black keys to avoid overlapping
@@ -380,7 +386,7 @@ void handle_midi_event(NoteEvent event) {
 }
 
 void update_keys_midi() {
-    float tps = 1000.f;
+    float tps = 3000.f;
 
     if (p->note_events.size > 0 && p->event_idx < p->note_events.size) {
         for (int i = 0; i < p->n_channel_arrays; i++) {
@@ -415,16 +421,24 @@ void plug_update(void) {
         ClearBackground(DARKGRAY);
         render_keys();
         update_keys();
-        if (p->midi_mode) {
+        if (p->play_midi) {
             update_keys_midi();
         }
         render_scroll_rects();
         update_scroll_rects();
     EndDrawing();
 
-    //if (IsKeyPressed(KEY_M)) {
-        p->midi_mode = true;//!p->midi_mode;
-    //}
+    if (IsKeyPressed(KEY_M)) {
+        p->play_midi = !p->play_midi;
+    }
+    if (IsKeyPressed(KEY_Q)) {
+        for (int i = 0; i < p->n_channel_arrays; i++) {
+            p->channel_event_idx[i] = 0;
+            p->channel_midi_dt[i] = 0;
+        }
+        p->event_idx = 0;
+        reset_keys();
+    }
 
     if (IsWindowResized()) {
         calculate_key_rects();
