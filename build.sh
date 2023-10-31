@@ -11,10 +11,10 @@ LIBS="`pkg-config --libs raylib`"
 mkdir -p ./build
 
 #build the hot reload DLL
-clang $CFLAGS -o ./build/libplug.so -fPIC -shared ./src/plug.c $LIBS
+clang $CFLAGS -o ./build/libplug.so -fPIC -shared ./src/plug.c ./src/midi-parser.c ./src/parsemidi.c $LIBS
 
 # build with hot reload enabled
 clang $CFLAGS -DHOTRELOAD -o ./build/pianolizer ./src/hotreload.c ./src/main.c $LIBS
 
 #build with hot reload disabled (link at compile time)
-#clang $CFLAGS -o ./build/pianolizer ./src/plug.c ./src/main.c $LIBS
+#clang $CFLAGS -o ./build/pianolizer ./src/plug.c ./src/main.c ./src/midi-parser.c ./src/parsemidi.c $LIBS

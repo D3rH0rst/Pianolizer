@@ -14,4 +14,4 @@ REM Set the path to your WinDependencies folder (replace with your actual path)
 set DEPENDENCIES_DIR=WinDependencies
 
 REM Build the project
-gcc %CFLAGS% -o %BUILD_DIR%pianolizer.exe  %SOURCE_DIR%main.c %SOURCE_DIR%plug.c %DEPENDENCIES_DIR%/bin/libraylib.a -lopengl32 -lgdi32 -lwinmm
+gcc %CFLAGS% -o %BUILD_DIR%pianolizer.exe  %SOURCE_DIR%main.c %SOURCE_DIR%plug.c %SOURCE_DIR%midi.c %DEPENDENCIES_DIR%/bin/libraylib.a -lopengl32 -lgdi32 -lwinmm

@@ -7,6 +7,7 @@
 #include <raylib.h>
 #endif
 #include "plug.h"
+#include "parsemidi.h"
 
 #define N_KEYS 88
 #define N_WHITE_KEYS 52
@@ -15,7 +16,8 @@
 #define BLACK_GROUPS 15
 #define FIRST_KEY 9
 #define SCROLL_RECT_CAP 10
-#define RECT_SPEED 100
+#define NOTE_EVENT_CAP 100
+#define SCROLL_SPEED 200
 #define KEY_SCROLL_RECT_OFFSET 5
 float padding = 1.0f;
 
@@ -27,7 +29,9 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-Vector2 prevMousePos = {0};
+
+
+
 typedef struct {
     Rectangle rect;
     bool finished;
@@ -54,6 +58,9 @@ typedef struct {
     Key keys[N_KEYS];
     Key* white_keys[N_WHITE_KEYS];
     Key* black_keys[N_BLACK_KEYS];
+    NoteEvents note_events;
+    Key* last_pressed_key;
+
 } Plug;
 
 static Plug* p = NULL;
@@ -146,6 +153,17 @@ void calculate_key_rects() {
             p->keys[i].key_rect.width = blackKey_width;
             p->keys[i].key_rect.height = blackKey_height;
         }
+
+        for (size_t j = 0; j < p->keys[i].scroll_rects.size; j++) {
+            if (p->keys[i].white) {
+                p->keys[i].scroll_rects.scrollRects[j].rect.width = whiteKey_width;
+            }
+            else {
+                p->keys[i].scroll_rects.scrollRects[j].rect.width = blackKey_width;
+            }
+            p->keys[i].scroll_rects.scrollRects[j].rect.x = p->keys[i].key_rect.x;
+        }
+
     }
 }
 
@@ -164,6 +182,9 @@ void plug_init(void) {
 
     size_t black_index = 0;
     size_t white_index = 0;
+
+    p->last_pressed_key = NULL;
+
     for (size_t i = 0; i < N_KEYS; i++) {
         p->keys[i].index = i;
         p->keys[i].pressed = false;
@@ -195,6 +216,10 @@ void plug_init(void) {
         }
         init_sr_array(&p->keys[i].scroll_rects, SCROLL_RECT_CAP);
     }
+    // Create the note events from the supplied midi file
+    init_note_event_array(&p->note_events, NOTE_EVENT_CAP);
+    create_event_arr("/home/max/Downloads/op42no5.mid", &p->note_events);
+    TraceLog(LOG_INFO, "Amount of note events: %zu\n", p->note_events.size);
 }
 
 void render_key(Key* key) {
@@ -230,7 +255,10 @@ void update_keys() {
         for (size_t i = 0; i < N_BLACK_KEYS; i++) {
             if (CheckCollisionPointRec(GetMousePosition(), p->black_keys[i]->key_rect)) {
                 if (!p->black_keys[i]->pressed) {
+                    if (p->last_pressed_key != NULL)
+                        p->last_pressed_key->pressed = false;
                     p->black_keys[i]->pressed = true;
+                    p->last_pressed_key = p->black_keys[i];
                     // Create the Scroll Rect
                     sr.finished = false;
                     sr.rect.width = blackKey_width;
@@ -240,17 +268,18 @@ void update_keys() {
                     append_scroll_rect(&p->black_keys[i]->scroll_rects, sr);
                 }
                 black_pressed = true;                           // prevent white key being pressed through black key
-            } else {
-                p->black_keys[i]->pressed = false;
             }
         }
         for (size_t i = 0; i < N_WHITE_KEYS; i++) {
             if (black_pressed) {
-                p->white_keys[i]->pressed = false;
+                // p->white_keys[i]->pressed = false;
             } else {
                 if (CheckCollisionPointRec(GetMousePosition(), p->white_keys[i]->key_rect)) {
                     if (!p->white_keys[i]->pressed) {
+                        if (p->last_pressed_key != NULL)
+                            p->last_pressed_key->pressed = false;
                         p->white_keys[i]->pressed = true;
+                        p->last_pressed_key = p->white_keys[i];
                         // Create the Scroll Rect
                         sr.finished = false;
                         sr.rect.width = whiteKey_width;
@@ -259,15 +288,12 @@ void update_keys() {
                         sr.rect.y = p->white_keys[i]->key_rect.y - sr.rect.height - KEY_SCROLL_RECT_OFFSET;
                         append_scroll_rect(&p->white_keys[i]->scroll_rects, sr);
                     }
-                } else {
-                    p->white_keys[i]->pressed = false;
                 }
             }
         }
     } else {
-        for (size_t i = 0; i < N_KEYS; i++) {
-            p->keys[i].pressed = false;
-        }
+        if (p->last_pressed_key != NULL)
+            p->last_pressed_key->pressed = false;
     }
 }
 
@@ -288,7 +314,7 @@ void render_scroll_rects() {
 
 void update_scroll_rects() {
     float dt = GetFrameTime();
-    float offset = RECT_SPEED * dt;
+    float offset = SCROLL_SPEED * dt;
     size_t n_scroll_rects = 0;
     ScrollRect* current_rects = NULL;
 
