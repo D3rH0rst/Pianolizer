@@ -4,11 +4,12 @@
 #include <assert.h>
 #ifdef _WIN32
 #include "../WinDependencies/include/raylib.h"
+#include "../WinDependencies/include/fluidsynth.h"
 #else
 #include <raylib.h>
+#include <fluidsynth.h>
 #endif
 #include "plug.h"
-#include <fluidsynth.h>
 
 #define N_KEYS 88
 #define N_WHITE_KEYS 52
@@ -20,6 +21,8 @@
 #define SCROLL_SPEED 200
 #define KEY_SCROLL_RECT_OFFSET 5
 
+#define FONT_SIZE 64
+
 float padding = 1.0f;
 
 float small_offset;
@@ -29,9 +32,6 @@ float whiteKey_height;
 
 float blackKey_width;
 float blackKey_height;
-
-const char* sf_file_path = "/home/max/Downloads/steinwaysf/steinwayd274.sf2";
-const char* debug_midi_path = "/home/max/Downloads/op42no5.mid";
 
 
 typedef struct {
@@ -62,6 +62,8 @@ typedef struct {
     Key* black_keys[N_BLACK_KEYS];
     Key* last_pressed_key;
 
+
+    Font font;
 
     //fluidsynth
     fluid_settings_t* fs_settings;
@@ -231,11 +233,6 @@ void init_fluid_synth(void) {
         TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create synth");
     }
 
-    p->sound_font_id = fluid_synth_sfload(p->fs_synth, sf_file_path, 1);
-    if(p->sound_font_id == FLUID_FAILED){
-        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to load soundfont [%s]", sf_file_path);
-    }
-
     p->fs_player = new_fluid_player(p->fs_synth);
     if (p->fs_player == NULL) {
         TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
@@ -252,7 +249,9 @@ void plug_init(void) {
     p = malloc(sizeof(*p));
     assert(p != NULL && "Buy more RAM lol");
     memset(p, 0, sizeof(*p));
-
+    p->font = LoadFontEx("../resources/LouisGeorgeCafe.ttf", FONT_SIZE, NULL, 0);
+    GenTextureMipmaps(&p->font.texture);
+    SetTextureFilter(p->font.texture, TEXTURE_FILTER_BILINEAR);
     init_keys();
     init_fluid_synth();
 }
@@ -403,8 +402,9 @@ void update_scroll_rects() {
 
 void handle_dropped_file() {
     FilePathList dropped_files = LoadDroppedFiles();
-    const char* new_midi = dropped_files.paths[0];
-    if (strcmp(GetFileExtension(new_midi), ".mid") == 0) {
+
+    const char* file0 = dropped_files.paths[0];
+    if (fluid_is_midifile(file0)) {
         if (p->fs_player != NULL) {
             fluid_player_stop(p->fs_player);
             delete_fluid_player(p->fs_player);
@@ -414,16 +414,26 @@ void handle_dropped_file() {
                 TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
             }
             fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
-            fluid_player_add(p->fs_player, new_midi);
+            fluid_player_add(p->fs_player, file0);
             fluid_player_play(p->fs_player);
 
             reset_keys();
         }
-        TraceLog(LOG_INFO, "MIDI: Midi file loaded: %s Press P to play/pause", new_midi);
+        TraceLog(LOG_INFO, "MIDI: Midi file loaded: %s Press P to play/pause", file0);
 
     }
+    else if (fluid_is_soundfont(file0) && strcmp(".sf2", GetFileExtension(file0)) == 0) {
+        p->sound_font_id = fluid_synth_sfload(p->fs_synth, file0, 1);
+        TraceLog(LOG_INFO, "Sound Font ID: %d", p->sound_font_id);
+        if (p->sound_font_id == FLUID_FAILED) {
+            TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to load soundfont [%s]", file0);
+        }
+        else {
+            TraceLog(LOG_INFO, "FLUIDSYNTH: Loaded sound font file [%s]", file0);
+        }
+    }
     else {
-        TraceLog(LOG_INFO, "MIDI: New non Midi file dropped: %s", new_midi);
+        TraceLog(LOG_INFO, "MIDI: Unupported file fropped: %s", file0);
     }
     UnloadDroppedFiles(dropped_files);
 }
@@ -465,7 +475,11 @@ void plug_update(void) {
 
         render_scroll_rects();
         update_scroll_rects();
+
+        if (fluid_synth_sfcount(p->fs_synth) == 0) {
+            DrawTextEx(p->font, "No SoundFont file loaded (.sf2). Drag&Drop one to hear sound", CLITERAL(Vector2){50, 50}, 20, 0, BLACK);
+        }
+
     EndDrawing();
-    // TraceLog(LOG_INFO, "FLUIDSYNTH status of player: %d", fluid_player_get_status(p->fs_player));
     handle_user_input();
 }

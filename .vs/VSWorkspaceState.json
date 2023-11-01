@@ -1,8 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src"
+    "\\src",
+    "\\WinDependencies"
   ],
-  "SelectedNode": "\\src\\parsemidi.h",
+  "SelectedNode": "\\buildWindows.bat",
   "PreviewInSolutionExplorer": false
 }
