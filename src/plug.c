@@ -62,7 +62,6 @@ typedef struct {
     Key* black_keys[N_BLACK_KEYS];
     Key* last_pressed_key;
 
-    bool play_midi;
 
     //fluidsynth
     fluid_settings_t* fs_settings;
@@ -431,12 +430,11 @@ void handle_dropped_file() {
 
 void handle_user_input() {
     if (IsKeyPressed(KEY_P)) {
-        if (p->play_midi) {
+        int fp_status = fluid_player_get_status(p->fs_player);
+        if (fp_status == FLUID_PLAYER_PLAYING) {
             fluid_player_stop(p->fs_player);
-            p->play_midi = false;
-        } else {
+        } else if (fp_status == FLUID_PLAYER_DONE) {
             fluid_player_play(p->fs_player);
-            p->play_midi = true;
         }
         reset_keys();
     }
@@ -468,6 +466,6 @@ void plug_update(void) {
         render_scroll_rects();
         update_scroll_rects();
     EndDrawing();
-
+    // TraceLog(LOG_INFO, "FLUIDSYNTH status of player: %d", fluid_player_get_status(p->fs_player));
     handle_user_input();
 }
