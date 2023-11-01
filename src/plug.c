@@ -362,16 +362,30 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
 }
 
 void render_scroll_rects() {
+    float hue_top, hue_bottom;
+    Rectangle current_rect;
+    Color color_top, color_bottom;
+
     for (size_t i = 0; i < N_WHITE_KEYS; i++) {
         for (size_t j = 0; j < p->white_keys[i]->scroll_rects.size; j++) {
-            // DrawRectangleRec(p->white_keys[i]->scroll_rects.scrollRects[j].rect, GREEN);
-            DrawRectangleRounded(p->white_keys[i]->scroll_rects.scrollRects[j].rect, 0.3, 5, GREEN);
+            current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;
+            hue_top = (current_rect.y) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
+            hue_bottom = (current_rect.y + current_rect.height) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
+            color_top = ColorFromHSV(hue_top * 360, 1, 1);
+            color_bottom = ColorFromHSV(hue_bottom * 360, 1, 1);
+            DrawRectangleGradientV(current_rect.x, current_rect.y, current_rect.width, current_rect.height, color_top, color_bottom);
+            // DrawRectangleRounded(current_rect, 0.3, 5, color);
         }
     }
     for (size_t i = 0; i < N_BLACK_KEYS; i++) {
         for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
-            // DrawRectangleRec(p->black_keys[i]->scroll_rects.scrollRects[j].rect, DARKGREEN);
-            DrawRectangleRounded(p->black_keys[i]->scroll_rects.scrollRects[j].rect, 0.3, 5, DARKGREEN);
+            current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
+            hue_top = 1.f - (current_rect.y) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
+            hue_bottom = 1.f - (current_rect.y + current_rect.height) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
+            color_top = ColorFromHSV(hue_top * 360, 1.f, 0.5f);
+            color_bottom = ColorFromHSV(hue_bottom * 360, 1.f, 0.5f);
+            DrawRectangleGradientV(current_rect.x, current_rect.y, current_rect.width, current_rect.height, color_top, color_bottom);
+            // DrawRectangleRounded(current_rect, 0.3, 5, color);
         }
     }
 }
