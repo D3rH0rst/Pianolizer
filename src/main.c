@@ -26,6 +26,7 @@ int main(void) {
         }
         plug_update();
     }
+    plug_clean();
     CloseWindow();
     return 0;
 }

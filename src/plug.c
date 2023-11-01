@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <assert.h>
 #ifdef _WIN32
 #include "../WinDependencies/include/raylib.h"
@@ -7,7 +8,7 @@
 #include <raylib.h>
 #endif
 #include "plug.h"
-#include "parsemidi.h"
+#include <fluidsynth.h>
 
 #define N_KEYS 88
 #define N_WHITE_KEYS 52
@@ -29,7 +30,8 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
-// const char* midi_file_path = "C:\\Users\\Max\\Downloads\\op42no5.mid";//"D:\\ProgrammingStuff\\pianolizer\\Midis\\Op16_No4_E_Minor.mid";
+const char* sf_file_path = "/home/max/Downloads/steinwaysf/steinwayd274.sf2";
+const char* debug_midi_path = "/home/max/Downloads/op42no5.mid";
 
 
 typedef struct {
@@ -60,16 +62,14 @@ typedef struct {
     Key* black_keys[N_BLACK_KEYS];
     Key* last_pressed_key;
 
-    NoteEvents note_events;
-    int n_channel_arrays;
-    ChannelEventArray channel_arrays[16];
-    int64_t channel_midi_dt[16];
-    size_t channel_event_idx[16];
-
     bool play_midi;
-    bool midi_event_handled;
-    size_t event_idx;
-    int64_t midi_dt;
+
+    //fluidsynth
+    fluid_settings_t* fs_settings;
+    fluid_synth_t* fs_synth;
+    fluid_audio_driver_t* fs_audio_driver;
+    fluid_player_t* fs_player;
+    int sound_font_id;
 } Plug;
 
 static Plug* p = NULL;
@@ -100,43 +100,7 @@ void delete_scroll_rect(ScrollRects* arr, size_t index) {
         arr->scrollRects[i] = arr->scrollRects[i + 1];
     }
 
-    // Decrease the size of the array
     arr->size--;
-}
-
-void insert_scroll_rect(ScrollRects* arr, size_t index, ScrollRect sr) {
-    if (index > arr->size) {
-        // Invalid index
-        return;
-    }
-
-    if (arr->size == arr->capacity) {
-        arr->capacity *= 2;
-        arr->scrollRects = realloc(arr->scrollRects, arr->capacity * sizeof(ScrollRect));
-    }
-
-    // Shift elements after index one position to the right
-    for (size_t i = arr->size; i > index; i--) {
-        arr->scrollRects[i] = arr->scrollRects[i - 1];
-    }
-
-    // Insert the new rectangle at the desired index
-    arr->scrollRects[index] = sr;
-
-    // Increase the size of the array
-    arr->size++;
-}
-
-void load_midi_file(const char* file_path) {
-    if (p->note_events.elements != NULL) {
-        destroy_note_event_array(&p->note_events);
-        for (int i = 0; i < p->n_channel_arrays; i++) {
-            destroy_channel_arrays(p->channel_arrays);
-        }
-        p->n_channel_arrays = 0;
-    }
-    create_event_arr(file_path, &p->note_events);
-    create_channel_arrays(&p->note_events, p->channel_arrays, &p->n_channel_arrays);
 }
 
 bool is_white(size_t key_octave) {
@@ -184,15 +148,37 @@ void calculate_key_rects() {
             }
             p->keys[i].scroll_rects.scrollRects[j].rect.x = p->keys[i].key_rect.x;
         }
-
     }
 }
 
-void plug_init(void) {
-    p = malloc(sizeof(*p));
-    assert(p != NULL && "Buy more RAM lol");
-    memset(p, 0, sizeof(*p));
+int player_callback(void* data, fluid_midi_event_t* event) {
+    (void)data;
+    uint8_t status, data1, data2;
+    status = fluid_midi_event_get_type(event);
+    data1 = fluid_midi_event_get_key(event);
+    data2 = fluid_midi_event_get_velocity(event);
+    if (status == 0x80 || (status == 0x90 && data2 == 0x0)) {
+        // Key off
+        p->keys[data1 - 21].pressed = false;
+    }
 
+    if (status == 0x90 && data2 > 0x0) {
+        // Key on
+        ScrollRect sr = {0};
+        size_t key_index = data1 - 21;
+        p->keys[key_index].pressed = true;
+        sr.finished = false;
+        sr.rect.width = p->keys[key_index].white ? whiteKey_width : blackKey_width;
+        sr.rect.height = 1;
+        sr.rect.x = p->keys[key_index].key_rect.x;
+        sr.rect.y = p->keys[key_index].key_rect.y - sr.rect.height - KEY_SCROLL_RECT_OFFSET;
+        append_scroll_rect(&p->keys[key_index].scroll_rects, sr);
+    }
+
+    return fluid_synth_handle_midi_event(p->fs_synth, event);
+}
+
+void init_keys(void) {
     whiteKey_width = ((float)GetScreenWidth() - (padding * (N_WHITE_KEYS - 1))) / N_WHITE_KEYS;
     whiteKey_height = whiteKey_width * 7;
 
@@ -200,12 +186,8 @@ void plug_init(void) {
     blackKey_height = whiteKey_height * 0.75f;
 
     small_offset = whiteKey_width + padding;
-
     size_t black_index = 0;
     size_t white_index = 0;
-
-    p->last_pressed_key = NULL;
-
     for (size_t i = 0; i < N_KEYS; i++) {
         p->keys[i].index = i;
         p->keys[i].pressed = false;
@@ -237,16 +219,50 @@ void plug_init(void) {
         }
         init_sr_array(&p->keys[i].scroll_rects, SCROLL_RECT_CAP);
     }
-    // Create the note events from the supplied midi file
-    
-    // load_midi_file(midi_file_path);
+}
 
+void init_fluid_synth(void) {
+    p->fs_settings = new_fluid_settings();
+    if (p->fs_settings == NULL) {
+        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create settings");
+    }
 
-    // TraceLog(LOG_INFO, "MIDI: Amount of note events: %zu", p->note_events.size);
-    // TraceLog(LOG_INFO, "MIDI: Amount of unique channels: %d", p->n_channel_arrays);
-    // for (int i = 0; i < p->n_channel_arrays; i++) {
-    //     TraceLog(LOG_INFO, "MIDI: Amount of events in channel %d: %zu", p->channel_arrays[i].channel, p->channel_arrays[i].events.size);
-    // }
+    p->fs_synth = new_fluid_synth(p->fs_settings);
+    if (p->fs_synth == NULL) {
+        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create synth");
+    }
+
+    p->sound_font_id = fluid_synth_sfload(p->fs_synth, sf_file_path, 1);
+    if(p->sound_font_id == FLUID_FAILED){
+        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to load soundfont [%s]", sf_file_path);
+    }
+
+    p->fs_player = new_fluid_player(p->fs_synth);
+    if (p->fs_player == NULL) {
+        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
+    }
+    fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
+
+    p->fs_audio_driver = new_fluid_audio_driver(p->fs_settings, p->fs_synth);
+    if (p->fs_audio_driver == NULL) {
+        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create audio driver");
+    }
+}
+
+void plug_init(void) {
+    p = malloc(sizeof(*p));
+    assert(p != NULL && "Buy more RAM lol");
+    memset(p, 0, sizeof(*p));
+
+    init_keys();
+    init_fluid_synth();
+}
+
+void plug_clean(void) {
+    delete_fluid_audio_driver(p->fs_audio_driver);
+    delete_fluid_player(p->fs_player);
+    delete_fluid_synth(p->fs_synth);
+    delete_fluid_settings(p->fs_settings);
 }
 
 void render_key(Key* key) {
@@ -280,7 +296,7 @@ void render_keys() {
     }
 }
 
-void update_keys() {    // handles mouse input and creating scroll rects if a key was newly pressed
+void update_keys() {    // handles mouse input, creating scroll rects and playing notes with fluidsynth if a key was newly pressed
     bool black_pressed = false;
     ScrollRect sr = {0};
 
@@ -292,6 +308,10 @@ void update_keys() {    // handles mouse input and creating scroll rects if a ke
                         p->last_pressed_key->pressed = false;
                     p->black_keys[i]->pressed = true;
                     p->last_pressed_key = p->black_keys[i];
+
+                    // create sound with fluidsynth
+                    fluid_synth_noteon(p->fs_synth, 0, p->black_keys[i]->index + 21, 80);
+
                     // Create the Scroll Rect
                     sr.finished = false;
                     sr.rect.width = blackKey_width;
@@ -313,6 +333,10 @@ void update_keys() {    // handles mouse input and creating scroll rects if a ke
                             p->last_pressed_key->pressed = false;
                         p->white_keys[i]->pressed = true;
                         p->last_pressed_key = p->white_keys[i];
+
+                        // create sound with fluidsynth
+                        fluid_synth_noteon(p->fs_synth, 0, p->white_keys[i]->index + 21, 80);
+
                         // Create the Scroll Rect
                         sr.finished = false;
                         sr.rect.width = whiteKey_width;
@@ -325,8 +349,12 @@ void update_keys() {    // handles mouse input and creating scroll rects if a ke
             }
         }
     } else {
-        if (p->last_pressed_key != NULL)
+        if (p->last_pressed_key != NULL) {
             p->last_pressed_key->pressed = false;
+            // turn off note in fluidsynth
+            fluid_synth_noteoff(p->fs_synth, 0, p->last_pressed_key->index + 21);
+        }
+
     }
 }
 
@@ -374,63 +402,26 @@ void update_scroll_rects() {
     }
 }
 
-void handle_midi_event(NoteEvent event) {
-    // TraceLog(LOG_INFO, "MIDIHANDLER: Event status: %u Event idx: %zu", event.status, p->event_idx);
-    uint8_t key_index;
-    if (event.status == 0x8 || (event.status == 0x9 && event.param2 == 0)) {
-        // Note off
-        key_index = event.param1 - 21;
-        p->keys[key_index].pressed = false;
-    }
-    if (event.status == 0x9 && event.param2 > 0) {
-        // Note on
-        ScrollRect sr = {0};
-        key_index = event.param1 - 21;
-        p->keys[key_index].pressed = true;
-        sr.finished = false;
-        sr.rect.width = p->keys[key_index].white ? whiteKey_width : blackKey_width;
-        sr.rect.height = 1;
-        sr.rect.x = p->keys[key_index].key_rect.x;
-        sr.rect.y = p->keys[key_index].key_rect.y - sr.rect.height - KEY_SCROLL_RECT_OFFSET;
-        append_scroll_rect(&p->keys[key_index].scroll_rects, sr);
-    }
-}
-
-void update_keys_midi() {
-    float tps = 3000.f;
-
-    if (p->note_events.size > 0 && p->event_idx < p->note_events.size) {
-        for (int i = 0; i < p->n_channel_arrays; i++) {
-            if (p->channel_midi_dt[i] >= p->channel_arrays[i].events.elements[p->channel_event_idx[i]].delta_time) {
-                handle_midi_event(p->channel_arrays[i].events.elements[p->channel_event_idx[i]]);
-                p->channel_event_idx[i]++;
-                p->channel_midi_dt[i] = 0;
-
-                // increment global event index to check if end reached
-                p->event_idx++;
-            } else {
-                p->channel_midi_dt[i] += (int64_t)(tps * GetFrameTime());
-            }
-        }
-    }
-}
-
-void reset_current_midi() {
-    for (int i = 0; i < p->n_channel_arrays; i++) {
-        p->channel_event_idx[i] = 0;
-        p->channel_midi_dt[i] = 0;
-    }
-    p->event_idx = 0;
-    reset_keys();
-}
-
-
 void handle_dropped_file() {
     FilePathList dropped_files = LoadDroppedFiles();
     const char* new_midi = dropped_files.paths[0];
     if (strcmp(GetFileExtension(new_midi), ".mid") == 0) {
-        load_midi_file(new_midi);
-        reset_current_midi();
+        if (p->fs_player != NULL) {
+            fluid_player_stop(p->fs_player);
+            delete_fluid_player(p->fs_player);
+
+            p->fs_player = new_fluid_player(p->fs_synth);
+            if (p->fs_player == NULL) {
+                TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
+            }
+            fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
+            fluid_player_add(p->fs_player, new_midi);
+            fluid_player_play(p->fs_player);
+
+            reset_keys();
+        }
+        TraceLog(LOG_INFO, "MIDI: Midi file loaded: %s Press P to play/pause", new_midi);
+
     }
     else {
         TraceLog(LOG_INFO, "MIDI: New non Midi file dropped: %s", new_midi);
@@ -439,12 +430,24 @@ void handle_dropped_file() {
 }
 
 void handle_user_input() {
-    if (IsKeyPressed(KEY_M)) {
-        p->play_midi = !p->play_midi;
+    if (IsKeyPressed(KEY_P)) {
+        if (p->play_midi) {
+            fluid_player_stop(p->fs_player);
+            p->play_midi = false;
+        } else {
+            fluid_player_play(p->fs_player);
+            p->play_midi = true;
+        }
         reset_keys();
     }
     if (IsKeyPressed(KEY_Q)) {
-        reset_current_midi();
+        fluid_player_seek(p->fs_player, 0);
+        reset_keys();
+    }
+    if (IsKeyPressed(KEY_H)) {
+        int total_ticks = fluid_player_get_total_ticks(p->fs_player);
+        fluid_player_seek(p->fs_player, total_ticks / 2);
+        reset_keys();
     }
 
     if (IsFileDropped()) {
@@ -461,10 +464,6 @@ void plug_update(void) {
         ClearBackground(DARKGRAY);
         render_keys();
         update_keys();
-
-        if (p->play_midi) {
-            update_keys_midi();
-        }
 
         render_scroll_rects();
         update_scroll_rects();
