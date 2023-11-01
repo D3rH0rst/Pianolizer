@@ -261,6 +261,8 @@ void plug_clean(void) {
     delete_fluid_player(p->fs_player);
     delete_fluid_synth(p->fs_synth);
     delete_fluid_settings(p->fs_settings);
+    UnloadFont(p->font);
+    free(p);
 }
 
 void render_key(Key* key) {
@@ -415,6 +417,7 @@ void handle_dropped_file() {
             }
             fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
             fluid_player_add(p->fs_player, file0);
+            fluid_player_set_loop(p->fs_player, -1);
             fluid_player_play(p->fs_player);
 
             reset_keys();

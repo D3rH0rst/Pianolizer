@@ -1,9 +1,8 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src",
-    "\\WinDependencies"
+    "\\src"
   ],
-  "SelectedNode": "\\buildWindows.bat",
+  "SelectedNode": "\\src\\plug.c",
   "PreviewInSolutionExplorer": false
 }
