@@ -300,12 +300,20 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
     bool black_pressed = false;
     ScrollRect sr = {0};
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+    if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        if (p->last_pressed_key != NULL) {
+            p->last_pressed_key->pressed = false;
+            // turn off note in fluidsynth
+            fluid_synth_noteoff(p->fs_synth, 0, p->last_pressed_key->index + 21);
+        }
+    } else {
         for (size_t i = 0; i < N_BLACK_KEYS; i++) {
             if (CheckCollisionPointRec(GetMousePosition(), p->black_keys[i]->key_rect)) {
                 if (!p->black_keys[i]->pressed) {
-                    if (p->last_pressed_key != NULL)
+                    if (p->last_pressed_key != NULL) {
                         p->last_pressed_key->pressed = false;
+                        fluid_synth_noteoff(p->fs_synth, 0, p->last_pressed_key->index + 21);
+                    }
                     p->black_keys[i]->pressed = true;
                     p->last_pressed_key = p->black_keys[i];
 
@@ -329,12 +337,14 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
             } else {
                 if (CheckCollisionPointRec(GetMousePosition(), p->white_keys[i]->key_rect)) {
                     if (!p->white_keys[i]->pressed) {
-                        if (p->last_pressed_key != NULL)
+                        if (p->last_pressed_key != NULL) {
                             p->last_pressed_key->pressed = false;
+                            fluid_synth_noteoff(p->fs_synth, 0, p->last_pressed_key->index + 21);
+                        }
                         p->white_keys[i]->pressed = true;
                         p->last_pressed_key = p->white_keys[i];
 
-                        // create sound with fluidsynth
+                        // create sound with fluidsynth.
                         fluid_synth_noteon(p->fs_synth, 0, p->white_keys[i]->index + 21, 80);
 
                         // Create the Scroll Rect
@@ -348,13 +358,6 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
                 }
             }
         }
-    } else {
-        if (p->last_pressed_key != NULL) {
-            p->last_pressed_key->pressed = false;
-            // turn off note in fluidsynth
-            fluid_synth_noteoff(p->fs_synth, 0, p->last_pressed_key->index + 21);
-        }
-
     }
 }
 
@@ -410,7 +413,7 @@ void handle_dropped_file() {
         if (p->fs_player != NULL) {
             fluid_player_stop(p->fs_player);
             delete_fluid_player(p->fs_player);
-
+            fluid_synth_all_notes_off(p->fs_synth, -1);
             p->fs_player = new_fluid_player(p->fs_synth);
             if (p->fs_player == NULL) {
                 TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
