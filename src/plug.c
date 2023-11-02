@@ -409,8 +409,8 @@ void render_scroll_rects() {
     if (bk_perlin_threshold > 0.9f || bk_perlin_threshold < 0.1f) {
         bk_perlin_threshold_mult *= -1.f;
     }
-    SetShaderValue(p->wk_shader, wk_perlin_threshold_loc, &wk_perlin_threshold, RL_SHADER_UNIFORM_FLOAT);
-    SetShaderValue(p->bk_shader, bk_perlin_threshold_loc, &bk_perlin_threshold, RL_SHADER_UNIFORM_FLOAT);
+    SetShaderValue(p->wk_shader, wk_perlin_threshold_loc, &wk_perlin_threshold, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(p->bk_shader, bk_perlin_threshold_loc, &bk_perlin_threshold, SHADER_UNIFORM_FLOAT);
 
     Rectangle current_rect;
     BeginShaderMode(p->wk_shader);
@@ -554,7 +554,7 @@ void plug_update(void) {
 
         render_scroll_rects();
         update_scroll_rects();
-        
+       
 
         if (fluid_synth_sfcount(p->fs_synth) == 0) {
             DrawTextEx(p->font, "No SoundFont file loaded (.sf2). Drag&Drop one to hear sound", CLITERAL(Vector2){50, 50}, 20, 0, BLACK);
