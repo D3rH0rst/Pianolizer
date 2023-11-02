@@ -1,0 +1,4 @@
+#ifndef FLUID_GETTERS_H_
+#define FLUID_GETTERS_H_
+
+#endif // FLUID_GETTERS_H_

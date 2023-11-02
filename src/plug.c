@@ -4,6 +4,7 @@
 #include <assert.h>
 #ifdef _WIN32
 #include "../WinDependencies/include/raylib.h"
+#include "../WinDependencies/include/rlgl.h"
 #include "../WinDependencies/include/fluidsynth.h"
 #else
 #include <raylib.h>
@@ -33,6 +34,19 @@ float whiteKey_height;
 float blackKey_width;
 float blackKey_height;
 
+Image perlin_image;
+Texture perlin_texture;
+Texture default_texture;
+
+int bk_key_size_loc;
+int wk_key_size_loc;
+
+typedef struct {
+    const char* file_path;
+    int duration;
+    int total_ticks;
+    float progress;
+} MidiPiece;
 
 typedef struct {
     Rectangle rect;
@@ -64,6 +78,8 @@ typedef struct {
 
 
     Font font;
+    MidiPiece current_piece;
+    bool new_piece_loaded;
 
     //fluidsynth
     fluid_settings_t* fs_settings;
@@ -71,6 +87,10 @@ typedef struct {
     fluid_audio_driver_t* fs_audio_driver;
     fluid_player_t* fs_player;
     int sound_font_id;
+
+    Shader wk_shader;
+    Shader bk_shader;
+
 } Plug;
 
 static Plug* p = NULL;
@@ -152,7 +172,7 @@ void calculate_key_rects() {
     }
 }
 
-int player_callback(void* data, fluid_midi_event_t* event) {
+int player_midi_callback(void* data, fluid_midi_event_t* event) {
     (void)data;
     uint8_t status, data1, data2;
     status = fluid_midi_event_get_type(event);
@@ -177,6 +197,19 @@ int player_callback(void* data, fluid_midi_event_t* event) {
     }
 
     return fluid_synth_handle_midi_event(p->fs_synth, event);
+}
+
+int player_tick_callback(void* data, int tick) {
+    (void)data;
+    (void)tick;
+    // fluid_player_t* player = (fluid_player_t*)data;
+    if (!p->new_piece_loaded) {
+        p->current_piece.total_ticks = fluid_player_get_total_ticks(p->fs_player);
+        p->current_piece.progress = 0.f;
+        p->current_piece.duration = (float)(p->current_piece.total_ticks / fluid_player_get_division(p->fs_player)) / (float)fluid_player_get_bpm(p->fs_player) * 60.f;
+        p->new_piece_loaded = true;
+    }
+    return FLUID_OK;
 }
 
 void init_keys(void) {
@@ -224,36 +257,37 @@ void init_keys(void) {
 
 void init_fluid_synth(void) {
     p->fs_settings = new_fluid_settings();
-    if (p->fs_settings == NULL) {
-        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create settings");
-    }
+    assert(p->fs_settings != NULL && "Buy more RAM lol");
 
     p->fs_synth = new_fluid_synth(p->fs_settings);
-    if (p->fs_synth == NULL) {
-        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create synth");
-    }
-
-    p->fs_player = new_fluid_player(p->fs_synth);
-    if (p->fs_player == NULL) {
-        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
-    }
-    fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
+    assert(p->fs_synth != NULL && "Buy more RAM lol");
 
     p->fs_audio_driver = new_fluid_audio_driver(p->fs_settings, p->fs_synth);
-    if (p->fs_audio_driver == NULL) {
-        TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create audio driver");
-    }
+    assert(p->fs_audio_driver != NULL && "Buy more RAM lol");
 }
 
 void plug_init(void) {
     p = malloc(sizeof(*p));
     assert(p != NULL && "Buy more RAM lol");
     memset(p, 0, sizeof(*p));
-    p->font = LoadFontEx("../resources/LouisGeorgeCafe.ttf", FONT_SIZE, NULL, 0);
+
+    p->font = LoadFontEx("../resources/fonts/LouisGeorgeCafe.ttf", FONT_SIZE, NULL, 0);
     GenTextureMipmaps(&p->font.texture);
     SetTextureFilter(p->font.texture, TEXTURE_FILTER_BILINEAR);
+
     init_keys();
     init_fluid_synth();
+
+    p->wk_shader = LoadShader(NULL, "../resources/shaders/white_keys.frag");
+    p->bk_shader = LoadShader(NULL, "../resources/shaders/black_keys.frag");
+
+    bk_key_size_loc = GetShaderLocation(p->bk_shader, "key_size");
+    wk_key_size_loc = GetShaderLocation(p->wk_shader, "key_size");
+
+    perlin_image = GenImagePerlinNoise(GetScreenWidth(), GetScreenHeight(), 0, 0, 5);
+    perlin_texture = LoadTextureFromImage(perlin_image);
+    default_texture = CLITERAL(Texture){ rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
+
 }
 
 void plug_clean(void) {
@@ -262,6 +296,8 @@ void plug_clean(void) {
     delete_fluid_synth(p->fs_synth);
     delete_fluid_settings(p->fs_settings);
     UnloadFont(p->font);
+    UnloadShader(p->wk_shader);
+    UnloadShader(p->bk_shader);
     free(p);
 }
 
@@ -362,32 +398,44 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
 }
 
 void render_scroll_rects() {
-    float hue_top, hue_bottom;
     Rectangle current_rect;
-    Color color_top, color_bottom;
-
+    float key_size_uniform[2];
+    // Rectangle src = { 0 };
+    // Texture draw_tex;
+    // BeginShaderMode(p->wk_shader);
     for (size_t i = 0; i < N_WHITE_KEYS; i++) {
         for (size_t j = 0; j < p->white_keys[i]->scroll_rects.size; j++) {
             current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;
-            hue_top = (current_rect.y) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
-            hue_bottom = (current_rect.y + current_rect.height) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
-            color_top = ColorFromHSV(hue_top * 360, 1, 1);
-            color_bottom = ColorFromHSV(hue_bottom * 360, 1, 1);
-            DrawRectangleGradientV(current_rect.x, current_rect.y, current_rect.width, current_rect.height, color_top, color_bottom);
-            // DrawRectangleRounded(current_rect, 0.3, 5, color);
+            key_size_uniform[0] = current_rect.width;
+            key_size_uniform[1] = current_rect.height;
+            // SetShaderValue(p->wk_shader, wk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
+            DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
+            // DrawTexturePro(default_texture, src, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
+            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 1, WHITE);
         }
     }
+    // EndShaderMode();
+
+    // BeginShaderMode(p->bk_shader);
     for (size_t i = 0; i < N_BLACK_KEYS; i++) {
         for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
             current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
-            hue_top = 1.f - (current_rect.y) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
-            hue_bottom = 1.f - (current_rect.y + current_rect.height) / ((float)GetScreenHeight() - whiteKey_height - KEY_SCROLL_RECT_OFFSET);
-            color_top = ColorFromHSV(hue_top * 360, 1.f, 0.5f);
-            color_bottom = ColorFromHSV(hue_bottom * 360, 1.f, 0.5f);
-            DrawRectangleGradientV(current_rect.x, current_rect.y, current_rect.width, current_rect.height, color_top, color_bottom);
-            // DrawRectangleRounded(current_rect, 0.3, 5, color);
+            key_size_uniform[0] = current_rect.width;
+            key_size_uniform[1] = current_rect.height;
+            //SetShaderValue(p->bk_shader, bk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
+            DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
+            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 1, BLACK);
         }
     }
+    // EndShaderMode();
+
+    BeginShaderMode(p->bk_shader);
+        float scale = 0.1f;
+        key_size_uniform[0] = perlin_texture.width * scale;
+        key_size_uniform[1] = perlin_texture.height * scale;
+        SetShaderValue(p->bk_shader, bk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
+        DrawTextureEx(perlin_texture, CLITERAL(Vector2){50, 10}, 0.f, scale, WHITE);
+    EndShaderMode();
 }
 
 void update_scroll_rects() {
@@ -428,17 +476,21 @@ void handle_dropped_file() {
             fluid_player_stop(p->fs_player);
             delete_fluid_player(p->fs_player);
             fluid_synth_all_notes_off(p->fs_synth, -1);
-            p->fs_player = new_fluid_player(p->fs_synth);
-            if (p->fs_player == NULL) {
-                TraceLog(LOG_ERROR, "FLUIDSYNTH: failed to create player");
-            }
-            fluid_player_set_playback_callback(p->fs_player, player_callback, NULL);
-            fluid_player_add(p->fs_player, file0);
-            fluid_player_set_loop(p->fs_player, -1);
-            fluid_player_play(p->fs_player);
-
             reset_keys();
-        }
+        } 
+        
+        p->fs_player = new_fluid_player(p->fs_synth);
+        assert(p->fs_player != NULL && "Buy more RAM lol");
+        fluid_player_set_playback_callback(p->fs_player, player_midi_callback, NULL);
+        fluid_player_set_tick_callback(p->fs_player, player_tick_callback, NULL);
+        fluid_player_add(p->fs_player, file0);
+        
+        fluid_player_set_loop(p->fs_player, -1);
+        fluid_player_play(p->fs_player);
+       
+        p->current_piece.file_path = strdup(file0);
+        
+        p->new_piece_loaded = false;
         TraceLog(LOG_INFO, "MIDI: Midi file loaded: %s Press P to play/pause", file0);
 
     }
@@ -478,6 +530,10 @@ void handle_user_input() {
         reset_keys();
     }
 
+    if (IsKeyPressed(KEY_U)) {
+        fluid_synth_sfunload(p->fs_synth, p->sound_font_id, 0);
+    }
+
     if (IsFileDropped()) {
         handle_dropped_file();
     }
@@ -495,11 +551,28 @@ void plug_update(void) {
 
         render_scroll_rects();
         update_scroll_rects();
+        
 
         if (fluid_synth_sfcount(p->fs_synth) == 0) {
             DrawTextEx(p->font, "No SoundFont file loaded (.sf2). Drag&Drop one to hear sound", CLITERAL(Vector2){50, 50}, 20, 0, BLACK);
         }
 
+        if (p->new_piece_loaded) {
+            const char* file_name = GetFileName(p->current_piece.file_path);
+            int total_min = p->current_piece.duration / 60;
+            int total_sec = p->current_piece.duration % 60;
+            
+            int progress_total = (float)fluid_player_get_current_tick(p->fs_player) / (float)p->current_piece.total_ticks * p->current_piece.duration;
+            int progress_min = progress_total / 60;
+            int progress_sec = progress_total % 60;
+            DrawTextEx(p->font, TextFormat("Current Piece: %s Time: %02d:%02d Progress: %02d:%02d", file_name,
+                total_min,
+                total_sec,
+                progress_min,
+                progress_sec),
+                CLITERAL(Vector2){50, 100}, 20, 0, BLACK);
+        }
+        
     EndDrawing();
     handle_user_input();
 }

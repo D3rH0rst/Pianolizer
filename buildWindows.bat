@@ -1,19 +1,14 @@
 @echo off
 
-REM Define the source and build directories
 set SOURCE_DIR=./src/
 set BUILD_DIR=./build/
 
-REM Create the build directory if it doesn't exist
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 
-REM Set compiler flags and libraries
 set CFLAGS=-Wall -Wextra
 
-REM Set the path to your WinDependencies folder (replace with your actual path)
 set DEPENDENCIES_DIR=./WinDependencies/
 set LIB_DIR=%DEPENDENCIES_DIR%bin/
-REM Build the project
 rem gcc %CFLAGS% -o %BUILD_DIR%pianolizer.exe  %SOURCE_DIR%main.c %SOURCE_DIR%plug.c %DEPENDENCIES_DIR%bin/libraylib.a %DEPENDENCIES_DIR%bin/libfluidsynth.dll.a -lopengl32 -lgdi32 -lwinmm
 
-gcc %CFLAGS% -o %BUILD_DIR%pianolizer.exe  %SOURCE_DIR%main.c %SOURCE_DIR%plug.c -L%LIB_DIR% -lraylib -lfluidsynth -lopengl32 -lgdi32 -lwinmm
+gcc %CFLAGS% -o %BUILD_DIR%pianolizer.exe  %SOURCE_DIR%main.c %SOURCE_DIR%plug.c -L%LIB_DIR% -lraylib -lfluidsynth -lopengl32 -lgdi32 -lwinmm 
