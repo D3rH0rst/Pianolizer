@@ -15,7 +15,7 @@ int main(void) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(factor*16, factor*9, "Pianolizer");
     SetTargetFPS(60);
-
+    
     plug_init();
 
     while (!WindowShouldClose()) {

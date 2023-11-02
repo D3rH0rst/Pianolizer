@@ -36,10 +36,13 @@ float blackKey_height;
 
 Image perlin_image;
 Texture perlin_texture;
-Texture default_texture;
 
-int bk_key_size_loc;
-int wk_key_size_loc;
+int wk_perlin_threshold_loc;
+int bk_perlin_threshold_loc;
+float wk_perlin_threshold = 0.6f;
+float bk_perlin_threshold = 0.4f;
+float wk_perlin_threshold_mult = 0.2f;
+float bk_perlin_threshold_mult = -0.2f;
 
 typedef struct {
     const char* file_path;
@@ -281,12 +284,12 @@ void plug_init(void) {
     p->wk_shader = LoadShader(NULL, "../resources/shaders/white_keys.frag");
     p->bk_shader = LoadShader(NULL, "../resources/shaders/black_keys.frag");
 
-    bk_key_size_loc = GetShaderLocation(p->bk_shader, "key_size");
-    wk_key_size_loc = GetShaderLocation(p->wk_shader, "key_size");
-
+    wk_perlin_threshold_loc = GetShaderLocation(p->wk_shader, "perlin_treshold");
+    bk_perlin_threshold_loc = GetShaderLocation(p->bk_shader, "perlin_treshold");
+  
     perlin_image = GenImagePerlinNoise(GetScreenWidth(), GetScreenHeight(), 0, 0, 5);
     perlin_texture = LoadTextureFromImage(perlin_image);
-    default_texture = CLITERAL(Texture){ rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
+    // default_texture = CLITERAL(Texture){ rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
 
 }
 
@@ -398,44 +401,44 @@ void update_keys() {    // handles mouse input, creating scroll rects and playin
 }
 
 void render_scroll_rects() {
+    wk_perlin_threshold += wk_perlin_threshold_mult * GetFrameTime();
+    if (wk_perlin_threshold > 0.9f || wk_perlin_threshold < 0.1f) {
+        wk_perlin_threshold_mult *= -1.f;
+    }
+    bk_perlin_threshold += bk_perlin_threshold_mult * GetFrameTime();
+    if (bk_perlin_threshold > 0.9f || bk_perlin_threshold < 0.1f) {
+        bk_perlin_threshold_mult *= -1.f;
+    }
+    SetShaderValue(p->wk_shader, wk_perlin_threshold_loc, &wk_perlin_threshold, RL_SHADER_UNIFORM_FLOAT);
+    SetShaderValue(p->bk_shader, bk_perlin_threshold_loc, &bk_perlin_threshold, RL_SHADER_UNIFORM_FLOAT);
+
     Rectangle current_rect;
-    float key_size_uniform[2];
-    // Rectangle src = { 0 };
-    // Texture draw_tex;
-    // BeginShaderMode(p->wk_shader);
+    BeginShaderMode(p->wk_shader);
     for (size_t i = 0; i < N_WHITE_KEYS; i++) {
         for (size_t j = 0; j < p->white_keys[i]->scroll_rects.size; j++) {
-            current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;
-            key_size_uniform[0] = current_rect.width;
-            key_size_uniform[1] = current_rect.height;
-            // SetShaderValue(p->wk_shader, wk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
+            current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;        
             DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
-            // DrawTexturePro(default_texture, src, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
-            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 1, WHITE);
+            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, WHITE);
         }
     }
-    // EndShaderMode();
+    EndShaderMode();
 
-    // BeginShaderMode(p->bk_shader);
+    BeginShaderMode(p->bk_shader);
     for (size_t i = 0; i < N_BLACK_KEYS; i++) {
         for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
             current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
-            key_size_uniform[0] = current_rect.width;
-            key_size_uniform[1] = current_rect.height;
-            //SetShaderValue(p->bk_shader, bk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
             DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
-            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 1, BLACK);
+            // DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, BLACK);
         }
     }
-    // EndShaderMode();
-
-    BeginShaderMode(p->bk_shader);
-        float scale = 0.1f;
-        key_size_uniform[0] = perlin_texture.width * scale;
-        key_size_uniform[1] = perlin_texture.height * scale;
-        SetShaderValue(p->bk_shader, bk_key_size_loc, key_size_uniform, RL_SHADER_UNIFORM_VEC2);
-        DrawTextureEx(perlin_texture, CLITERAL(Vector2){50, 10}, 0.f, scale, WHITE);
     EndShaderMode();
+    for (size_t i = 0; i < N_BLACK_KEYS; i++) {
+        for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
+            current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
+            // DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
+            DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, BLACK);
+        }
+    }
 }
 
 void update_scroll_rects() {
@@ -572,7 +575,7 @@ void plug_update(void) {
                 progress_sec),
                 CLITERAL(Vector2){50, 100}, 20, 0, BLACK);
         }
-        
+        DrawFPS(10, 10);
     EndDrawing();
     handle_user_input();
 }
