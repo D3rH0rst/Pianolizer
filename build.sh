@@ -6,7 +6,7 @@ set -xe
 DEBUG="-ggdb"
 
 CFLAGS="-Wall -Wextra $DEBUG `pkg-config --cflags raylib` `pkg-config --cflags fluidsynth`"
-LIBS="`pkg-config --libs raylib` `pkg-config --libs fluidsynth`"
+LIBS="`pkg-config --libs raylib` `pkg-config --libs fluidsynth` -lm"
 
 mkdir -p ./build
 

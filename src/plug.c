@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
+#include <math.h>
 #ifdef _WIN32
 #include "../WinDependencies/include/raylib.h"
 #include "../WinDependencies/include/rlgl.h"
@@ -36,6 +37,11 @@ float blackKey_height;
 
 Image perlin_image;
 Texture perlin_texture;
+
+int perlin_offset_x;
+int perlin_offset_y;
+
+float perlin_dt = 0.f;
 
 int wk_perlin_threshold_loc;
 int bk_perlin_threshold_loc;
@@ -286,9 +292,14 @@ void plug_init(void) {
 
     wk_perlin_threshold_loc = GetShaderLocation(p->wk_shader, "perlin_treshold");
     bk_perlin_threshold_loc = GetShaderLocation(p->bk_shader, "perlin_treshold");
-  
-    perlin_image = GenImagePerlinNoise(GetScreenWidth(), GetScreenHeight(), 0, 0, 5);
+    int monitor_width = GetMonitorWidth(GetCurrentMonitor());
+    int monitor_height = GetMonitorHeight(GetCurrentMonitor());
+    perlin_image = GenImagePerlinNoise(monitor_width, monitor_height, 0, 0, 5);
     perlin_texture = LoadTextureFromImage(perlin_image);
+
+    perlin_offset_x = (monitor_width - GetScreenWidth()) / 2;
+    perlin_offset_y = (monitor_height - GetScreenHeight()) / 2;
+
     // default_texture = CLITERAL(Texture){ rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8 };
 
 }
@@ -413,11 +424,17 @@ void render_scroll_rects() {
     SetShaderValue(p->bk_shader, bk_perlin_threshold_loc, &bk_perlin_threshold, SHADER_UNIFORM_FLOAT);
 
     Rectangle current_rect;
+    Rectangle source_rect;
+    perlin_dt += GetFrameTime();
+    float source_offset_x = sinf(perlin_dt) * 320 + perlin_offset_x;
+    float source_offset_y = cosf(perlin_dt) * 180 + perlin_offset_y;
+
     BeginShaderMode(p->wk_shader);
     for (size_t i = 0; i < N_WHITE_KEYS; i++) {
         for (size_t j = 0; j < p->white_keys[i]->scroll_rects.size; j++) {
-            current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;        
-            DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
+            current_rect = p->white_keys[i]->scroll_rects.scrollRects[j].rect;
+            source_rect = CLITERAL(Rectangle) {current_rect.x + source_offset_x, current_rect.y + source_offset_y, current_rect.width, current_rect.height };
+            DrawTexturePro(perlin_texture, source_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
             DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, WHITE);
         }
     }
@@ -426,16 +443,17 @@ void render_scroll_rects() {
     BeginShaderMode(p->bk_shader);
     for (size_t i = 0; i < N_BLACK_KEYS; i++) {
         for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
-            current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
-            DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
-            // DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, BLACK);
+            current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect; 
+            source_rect = CLITERAL(Rectangle) { current_rect.x + source_offset_x, current_rect.y + source_offset_y, current_rect.width, current_rect.height };
+            DrawTexturePro(perlin_texture, source_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
         }
     }
     EndShaderMode();
+
+    // For some reason the color of DrawRectangleRoundedLines is always white in the shader, so i have to render the black ones seperately
     for (size_t i = 0; i < N_BLACK_KEYS; i++) {
         for (size_t j = 0; j < p->black_keys[i]->scroll_rects.size; j++) {
             current_rect = p->black_keys[i]->scroll_rects.scrollRects[j].rect;
-            // DrawTexturePro(perlin_texture, current_rect, current_rect, CLITERAL(Vector2){0, 0}, 0.f, WHITE);
             DrawRectangleRoundedLines(current_rect, 0.5f, 5, 2, BLACK);
         }
     }
@@ -531,10 +549,6 @@ void handle_user_input() {
         int total_ticks = fluid_player_get_total_ticks(p->fs_player);
         fluid_player_seek(p->fs_player, total_ticks / 2);
         reset_keys();
-    }
-
-    if (IsKeyPressed(KEY_U)) {
-        fluid_synth_sfunload(p->fs_synth, p->sound_font_id, 0);
     }
 
     if (IsFileDropped()) {
