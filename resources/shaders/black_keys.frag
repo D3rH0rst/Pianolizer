@@ -20,6 +20,6 @@ void main() {
     if (brightness < perlin_treshold) {
         finalColor = noiseColor;
     } else {
-        finalColor = vec4(0);
+        finalColor = vec4(0, 0, 0, 1);
     }
 }
